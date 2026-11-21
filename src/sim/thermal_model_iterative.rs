@@ -892,6 +892,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .conduction
             .ground_temperature
             .ground_temperature(timestep)
+            .0
     }
 
     /// Solve coupled zone temperatures using matrix-based approach (Issue #381)
@@ -958,7 +959,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .0
             .conduction
             .ground_temperature
-            .ground_temperature(timestep);
+            .ground_temperature(timestep)
+            .0;
 
         // --- Dynamic Ventilation (Night Ventilation) ---
         let hour_of_day = (timestep % 24) as u8;
@@ -1449,8 +1451,8 @@ mod tests {
             fn clone_box(&self) -> Box<dyn GroundTemperature> {
                 Box::new(self.clone())
             }
-            fn ground_temperature(&self, _t: usize) -> f64 {
-                self.temp.clamp(10.0, 30.0)
+            fn ground_temperature(&self, _t: usize) -> crate::sim::boundary::Celsius {
+                crate::sim::boundary::Celsius(self.temp.clamp(10.0, 30.0))
             }
         }
         let mut model = ThermalModel::<VectorField>::new(1);

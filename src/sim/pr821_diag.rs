@@ -152,7 +152,7 @@ impl DiagCollector {
             .copied()
             .unwrap_or(0.0);
 
-        let t_ground = model.conduction.ground_temperature.ground_temperature(t);
+        let t_ground = model.conduction.ground_temperature.ground_temperature(t).0;
 
         self.rows.push(DiagRow {
             t,

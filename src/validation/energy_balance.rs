@@ -369,7 +369,8 @@ impl EnergyBalanceValidator {
         let t_ground = thermal_model
             .conduction
             .ground_temperature
-            .ground_temperature(0);
+            .ground_temperature(0)
+            .0;
 
         let conv_frac = thermal_model.solar.convective_fraction;
         let rad_frac = 1.0 - conv_frac;

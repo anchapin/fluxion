@@ -172,7 +172,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .0
             .conduction
             .ground_temperature
-            .ground_temperature(timestep);
+            .ground_temperature(timestep)
+            .0;
 
         // --- Dynamic Ventilation (Night Ventilation) ---
         let hour_of_day = (timestep % 24) as u8;

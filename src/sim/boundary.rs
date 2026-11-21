@@ -22,12 +22,36 @@
 //!
 //! // Create constant ground temperature (ASHRAE 140 default)
 //! let ground = ConstantGroundTemperature::new(10.0);
-//! let temp = ground.ground_temperature(1000); // Hour 1000 of year
+//! let temp = ground.ground_temperature(1000).0; // Hour 1000 of year
 //! assert_eq!(temp, 10.0);
 //! ```
 
 use std::boxed::Box;
 use std::f64::consts::PI;
+
+/// A temperature expressed in degrees Celsius ([°C]).
+///
+/// Issue #4809 (the units/typestate pilot): the [`GroundTemperature`] trait
+/// face used to hand its consumers a bare `f64`, indistinguishable — to the
+/// type system — from a kelvin value or from a temperature *difference*.
+/// The face now returns this zero-cost newtype, so an illegal assignment is
+/// unrepresentable: a consumer that wants the raw number unwraps it (`.0`)
+/// at the seam, and every such unwrap is greppable.
+///
+/// The wrapper deliberately carries no arithmetic impls: mixing Celsius
+/// values into expressions stays possible only through explicit `.0`
+/// access, so a unit-mixing defect cannot hide behind operator overloads.
+/// [`Celsius::new`] exists for implementors; derive-level traits only
+/// (`Debug`/`Clone`/`Copy`/`PartialEq`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Celsius(pub f64);
+
+impl Celsius {
+    /// Wrap a degrees-Celsius value.
+    pub fn new(c: f64) -> Self {
+        Celsius(c)
+    }
+}
 
 /// Trait for ground temperature models in building energy simulation.
 ///
@@ -43,7 +67,7 @@ use std::f64::consts::PI;
 /// # Example Implementation
 ///
 /// ```rust
-/// use fluxion::sim::boundary::GroundTemperature;
+/// use fluxion::sim::boundary::{Celsius, GroundTemperature};
 ///
 /// struct SimpleGround {
 ///     temp: f64,
@@ -54,8 +78,8 @@ use std::f64::consts::PI;
 ///         Box::new(SimpleGround { temp: self.temp })
 ///     }
 ///
-///     fn ground_temperature(&self, _hour_of_year: usize) -> f64 {
-///         self.temp
+///     fn ground_temperature(&self, _hour_of_year: usize) -> Celsius {
+///         Celsius(self.temp)
 ///     }
 /// }
 /// ```
@@ -73,7 +97,7 @@ pub trait GroundTemperature: Send + Sync {
     ///
     /// # Returns
     ///
-    /// Ground temperature in degrees Celsius.
+    /// Ground temperature as a [`Celsius`] value (degrees Celsius).
     ///
     /// # Notes
     ///
@@ -83,7 +107,7 @@ pub trait GroundTemperature: Send + Sync {
     ///   ground-coupled floor boundary) march that state forward and keep it
     ///   across the year wrap, so the returned temperature is continuous
     ///   from one year into the next
-    fn ground_temperature(&self, hour_of_year: usize) -> f64;
+    fn ground_temperature(&self, hour_of_year: usize) -> Celsius;
 }
 
 /// Constant ground temperature model.
@@ -111,8 +135,8 @@ pub trait GroundTemperature: Send + Sync {
 ///
 /// // ASHRAE 140 default
 /// let ground = ConstantGroundTemperature::new(10.0);
-/// assert_eq!(ground.ground_temperature(0), 10.0);
-/// assert_eq!(ground.ground_temperature(4380), 10.0);
+/// assert_eq!(ground.ground_temperature(0).0, 10.0);
+/// assert_eq!(ground.ground_temperature(4380).0, 10.0);
 /// ```
 #[derive(Debug, Clone)]
 pub struct ConstantGroundTemperature {
@@ -154,8 +178,8 @@ impl GroundTemperature for ConstantGroundTemperature {
     fn clone_box(&self) -> Box<dyn GroundTemperature> {
         Box::new(self.clone())
     }
-    fn ground_temperature(&self, _hour_of_year: usize) -> f64 {
-        self.temperature
+    fn ground_temperature(&self, _hour_of_year: usize) -> Celsius {
+        Celsius(self.temperature)
     }
 }
 
@@ -217,8 +241,8 @@ impl GroundTemperature for ConstantGroundTemperature {
 /// );
 ///
 /// // Temperature varies by hour and depth
-/// let temp_winter = ground.ground_temperature(0);      // ~Jan 1
-/// let temp_summer = ground.ground_temperature(4380); // ~Jul 1
+/// let temp_winter = ground.ground_temperature(0).0;      // ~Jan 1
+/// let temp_summer = ground.ground_temperature(4380).0; // ~Jul 1
 /// assert!(temp_summer > temp_winter);
 /// ```
 #[derive(Debug, Clone)]
@@ -331,7 +355,7 @@ impl GroundTemperature for DynamicGroundTemperature {
         Box::new(self.clone())
     }
 
-    fn ground_temperature(&self, hour_of_year: usize) -> f64 {
+    fn ground_temperature(&self, hour_of_year: usize) -> Celsius {
         // Convert hour to day (0-364)
         let day = (hour_of_year / 24) as f64 % 365.0;
 
@@ -346,7 +370,7 @@ impl GroundTemperature for DynamicGroundTemperature {
         let phase = decay;
         let annual_cycle = (omega * day - phase).cos();
 
-        self.t_mean - self.t_amplitude * damping * annual_cycle
+        Celsius(self.t_mean - self.t_amplitude * damping * annual_cycle)
     }
 }
 
@@ -403,7 +427,7 @@ impl GroundTemperature for MonthlyGroundTemperature {
         Box::new(self.clone())
     }
 
-    fn ground_temperature(&self, hour_of_year: usize) -> f64 {
+    fn ground_temperature(&self, hour_of_year: usize) -> Celsius {
         // Find the most recent month start ≤ hour_of_year.
         let h = hour_of_year.min(Self::MONTH_START_HOURS[11]);
         let mut month = 0_usize;
@@ -414,7 +438,7 @@ impl GroundTemperature for MonthlyGroundTemperature {
                 break;
             }
         }
-        self.monthly[month]
+        Celsius(self.monthly[month])
     }
 }
 
@@ -927,7 +951,7 @@ impl GroundTemperature for GroundCoupledFloorBoundary {
     /// modulo below, so a multi-year driver may hand over the absolute hour
     /// (8760 is the first hour of the second year). The soil state is
     /// marched forward across that wrap and never reset (Issue #4794).
-    fn ground_temperature(&self, hour_of_year: usize) -> f64 {
+    fn ground_temperature(&self, hour_of_year: usize) -> Celsius {
         let hour = hour_of_year % (HOURS_PER_YEAR as usize);
         let mut state = match self.state.lock() {
             Ok(guard) => guard,
@@ -936,9 +960,9 @@ impl GroundTemperature for GroundCoupledFloorBoundary {
         if !self.advance_to(&mut state, hour) {
             // The ground solve failed: fall back to the undisturbed ground
             // temperature rather than corrupting the zone balance.
-            return self.fallback_temperature_c;
+            return Celsius(self.fallback_temperature_c);
         }
-        self.coupled_temperature_c(&state)
+        Celsius(self.coupled_temperature_c(&state))
     }
 }
 
@@ -972,14 +996,36 @@ pub fn floor_ground_boundary(
 mod tests {
     use super::*;
 
+    // === Issue #4809: the GroundTemperature trait face carries its unit ===
+    //
+    // The trait hands its consumers a degrees-Celsius value, not a bare
+    // `f64`: a kelvin value or a temperature difference cannot be assigned
+    // from this face without the type system complaining. The f64-shaped
+    // version of the first assertion is exactly what compiled before the
+    // pilot; the red-first receipt for this slice is the E0412 (cannot find
+    // type `Celsius`) these tests produced against the pre-pilot signature.
+    #[test]
+    fn trait_face_returns_celsius() {
+        let ground = ConstantGroundTemperature::new(10.0);
+        let t: Celsius = ground.ground_temperature(0);
+        assert_eq!(t.0, 10.0);
+    }
+
+    #[test]
+    fn celsius_newtype_is_transparent() {
+        for raw in [-40.0, 0.0, 10.0, 21.5, 1234.5] {
+            assert_eq!(Celsius::new(raw).0, raw);
+        }
+    }
+
     #[test]
     fn test_constant_ground_temperature() {
         let ground = ConstantGroundTemperature::new(10.0);
 
         // Temperature should be constant regardless of time
-        assert_eq!(ground.ground_temperature(0), 10.0);
-        assert_eq!(ground.ground_temperature(4380), 10.0); // Mid-year
-        assert_eq!(ground.ground_temperature(8759), 10.0); // End of year
+        assert_eq!(ground.ground_temperature(0).0, 10.0);
+        assert_eq!(ground.ground_temperature(4380).0, 10.0); // Mid-year
+        assert_eq!(ground.ground_temperature(8759).0, 10.0); // End of year
     }
 
     #[test]
@@ -989,14 +1035,14 @@ mod tests {
 
         ground.set_temperature(12.0);
         assert_eq!(ground.temperature(), 12.0);
-        assert_eq!(ground.ground_temperature(100), 12.0);
+        assert_eq!(ground.ground_temperature(100).0, 12.0);
     }
 
     #[test]
     fn test_ashrae_140_default() {
         // ASHRAE 140 specifies 10°C constant ground temperature
         let ground = ConstantGroundTemperature::new(10.0);
-        assert_eq!(ground.ground_temperature(0), 10.0);
+        assert_eq!(ground.ground_temperature(0).0, 10.0);
     }
 
     #[test]
@@ -1031,8 +1077,8 @@ mod tests {
     fn test_dynamic_ground_temperature_varies_with_time() {
         let ground = DynamicGroundTemperature::new(11.0, 12.0, 1.0, 0.07);
 
-        let temp_winter = ground.ground_temperature(0); // ~Jan 1
-        let temp_summer = ground.ground_temperature(4380); // ~Jul 1
+        let temp_winter = ground.ground_temperature(0).0; // ~Jan 1
+        let temp_summer = ground.ground_temperature(4380).0; // ~Jul 1
 
         // Summer should be warmer than winter
         assert!(temp_summer > temp_winter);
@@ -1045,7 +1091,7 @@ mod tests {
         // Average over a full year should approximate the mean
         let mut sum = 0.0;
         for h in (0..8760).step_by(24) {
-            sum += ground.ground_temperature(h);
+            sum += ground.ground_temperature(h).0;
         }
         let avg = sum / 365.0;
 
@@ -1090,18 +1136,18 @@ mod tests {
         let deep = DynamicGroundTemperature::new(11.0, 12.0, 2.0, 0.07);
 
         let temp_shallow_min = (0..365)
-            .map(|d| shallow.ground_temperature(d * 24))
+            .map(|d| shallow.ground_temperature(d * 24).0)
             .fold(f64::INFINITY, f64::min);
         let temp_shallow_max = (0..365)
-            .map(|d| shallow.ground_temperature(d * 24))
+            .map(|d| shallow.ground_temperature(d * 24).0)
             .fold(f64::NEG_INFINITY, f64::max);
         let amp_shallow = temp_shallow_max - temp_shallow_min;
 
         let temp_deep_min = (0..365)
-            .map(|d| deep.ground_temperature(d * 24))
+            .map(|d| deep.ground_temperature(d * 24).0)
             .fold(f64::INFINITY, f64::min);
         let temp_deep_max = (0..365)
-            .map(|d| deep.ground_temperature(d * 24))
+            .map(|d| deep.ground_temperature(d * 24).0)
             .fold(f64::NEG_INFINITY, f64::max);
         let amp_deep = temp_deep_max - temp_deep_min;
 
@@ -1141,8 +1187,8 @@ mod tests {
         let ground = DynamicGroundTemperature::new(11.0, 12.0, 1.0, 0.07);
 
         // Temperature at end of year should be close to start of next year
-        let temp_end = ground.ground_temperature(8759);
-        let temp_start = ground.ground_temperature(0);
+        let temp_end = ground.ground_temperature(8759).0;
+        let temp_start = ground.ground_temperature(0).0;
 
         // Within 0.1°C
         assert!((temp_end - temp_start).abs() < 0.1);
@@ -1157,15 +1203,15 @@ mod tests {
         ];
         let ground = MonthlyGroundTemperature::new(monthly);
         // January
-        assert_eq!(ground.ground_temperature(0), 1.0);
-        assert_eq!(ground.ground_temperature(743), 1.0);
+        assert_eq!(ground.ground_temperature(0).0, 1.0);
+        assert_eq!(ground.ground_temperature(743).0, 1.0);
         // February (starts at hour 744)
-        assert_eq!(ground.ground_temperature(744), 2.0);
+        assert_eq!(ground.ground_temperature(744).0, 2.0);
         // June (starts at hour 3624)
-        assert_eq!(ground.ground_temperature(3624), 6.0);
+        assert_eq!(ground.ground_temperature(3624).0, 6.0);
         // December (starts at hour 8016)
-        assert_eq!(ground.ground_temperature(8016), 12.0);
-        assert_eq!(ground.ground_temperature(8759), 12.0);
+        assert_eq!(ground.ground_temperature(8016).0, 12.0);
+        assert_eq!(ground.ground_temperature(8759).0, 12.0);
     }
 
     #[test]
@@ -1182,7 +1228,7 @@ mod tests {
         let ground2 = ground1.clone();
 
         assert_eq!(ground1.temperature(), ground2.temperature());
-        assert_eq!(ground2.ground_temperature(100), 10.0);
+        assert_eq!(ground2.ground_temperature(100).0, 10.0);
     }
 
     #[test]
@@ -1197,8 +1243,8 @@ mod tests {
 
         // Same temperature at same time
         assert_eq!(
-            ground1.ground_temperature(1000),
-            ground2.ground_temperature(1000)
+            ground1.ground_temperature(1000).0,
+            ground2.ground_temperature(1000).0
         );
     }
 
@@ -1311,8 +1357,8 @@ mod tests {
         let mut series = Vec::new();
         let mut differs_from_constant = false;
         for hour in (0..8760).step_by(24) {
-            let t = boundary.ground_temperature(hour);
-            if (t - constant.ground_temperature(hour)).abs() > 1.0e-6 {
+            let t = boundary.ground_temperature(hour).0;
+            if (t - constant.ground_temperature(hour).0).abs() > 1.0e-6 {
                 differs_from_constant = true;
             }
             series.push(t);
@@ -1337,12 +1383,12 @@ mod tests {
         let constant_boundary =
             floor_ground_boundary(&constant_spec).expect("floor boundary must exist");
         assert_eq!(
-            constant_boundary.ground_temperature(0),
-            constant.ground_temperature(0)
+            constant_boundary.ground_temperature(0).0,
+            constant.ground_temperature(0).0
         );
         assert_ne!(
-            constant_boundary.ground_temperature(0),
-            boundary.ground_temperature(0)
+            constant_boundary.ground_temperature(0).0,
+            boundary.ground_temperature(0).0
         );
 
         // Sanity: the builder carries the opt-in into the specification.
@@ -1388,7 +1434,7 @@ mod tests {
         // second year.
         let mut driven = Vec::new();
         for hour in FIRST_HOUR..LAST_HOUR {
-            driven.push(boundary.ground_temperature(hour));
+            driven.push(boundary.ground_temperature(hour).0);
         }
 
         // Reference: the same continuous march without a year boundary — the
@@ -1440,7 +1486,8 @@ mod tests {
         // untouched initial field).
         let year_one_start = GroundCoupledFloorBoundary::new(&spec, 8.0)
             .expect("ground-coupled floor boundary must build")
-            .ground_temperature(0);
+            .ground_temperature(0)
+            .0;
         let year_two_start = driven[8760 - FIRST_HOUR];
         assert!(
             (year_two_start - year_one_start).abs() > 1.0e-3,
@@ -1480,8 +1527,8 @@ mod tests {
 
         for hour in [0usize, 1, 24, 500, 1000, 4380, 8000, 8759] {
             assert_eq!(
-                boundary.ground_temperature(hour),
-                constant.ground_temperature(hour),
+                boundary.ground_temperature(hour).0,
+                constant.ground_temperature(hour).0,
                 "floor ground temperature must be bit-identical at hour {hour}"
             );
         }
@@ -1524,7 +1571,7 @@ mod tests {
         // The uniform ground forcing leaves the soil column uniform, so the
         // value the coupled path reads at the coupling depth is the forcing
         // temperature itself.
-        let t_ground = model.conduction.ground_temperature.ground_temperature(0);
+        let t_ground = model.conduction.ground_temperature.ground_temperature(0).0;
         assert!(
             (t_ground - T_GROUND_C).abs() < 1.0e-9,
             "uniform ground forcing must leave the soil uniform, got {t_ground} °C"
