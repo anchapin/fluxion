@@ -127,22 +127,7 @@ ignore = [
     # only emit `advisory-not-detected` noise. Each entry below carries the
     # machine-readable `deny-scope-exempt` marker consumed by
     # `scripts/check_audit_deny_agree.py`.
-    "RUSTSEC-2024-0411",  # gdkwayland-sys (deny-scope-exempt)
-    "RUSTSEC-2024-0412",  # gdk (deny-scope-exempt)
-    "RUSTSEC-2024-0413",  # atk (deny-scope-exempt)
-    "RUSTSEC-2024-0414",  # gtk (deny-scope-exempt)
-    "RUSTSEC-2024-0415",  # gtk-sys (deny-scope-exempt)
-    "RUSTSEC-2024-0416",  # atk-sys (deny-scope-exempt)
-    "RUSTSEC-2024-0417",  # gdkx11-sys (deny-scope-exempt)
-    "RUSTSEC-2024-0418",  # gdk-sys (deny-scope-exempt)
-    "RUSTSEC-2024-0419",  # gtk3-macros (deny-scope-exempt)
-    "RUSTSEC-2024-0420",  # gtk-sys (additional advisory) (deny-scope-exempt)
     "RUSTSEC-2024-0370",  # proc-macro-error (used by gtk-rs proc-macros) (deny-scope-exempt)
-    "RUSTSEC-2025-0081",  # unic-char-property (deny-scope-exempt)
-    "RUSTSEC-2025-0075",  # unic-char-range (deny-scope-exempt)
-    "RUSTSEC-2025-0080",  # unic-common (deny-scope-exempt)
-    "RUSTSEC-2025-0100",  # unic-ucd-ident (deny-scope-exempt)
-    "RUSTSEC-2025-0098",  # unic-ucd-version (deny-scope-exempt)
     # RUSTSEC-2024-0449 (unsafe-libyaml is unmaintained) — surfaced 12 Oct 2026
     # when the RustSec DB began flagging it; first observed failing the
     # Cargo Audit gate on PR #4385 (loop round 17, issue #4384 fix) with no
